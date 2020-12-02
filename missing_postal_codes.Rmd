@@ -1,0 +1,386 @@
+---
+title: "Geocoding Missing Postal Codes"
+author: "Christopher Belanger"
+date: "`r Sys.time()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+library(tidyverse)
+library(sf)
+library(leaflet)
+library(httr)
+library(readxl)
+
+# load ONS Gen2 shapefile
+url <- "https://opendata.arcgis.com/datasets/32fe76b71c5e424fab19fec1f180ec18_0.geojson"
+ons_shp <- sf::read_sf(url) %>%
+  sf::st_make_valid() 
+```
+
+
+# Introduction
+
+The Ottawa Neighbourhood Study (ONS) produced a single-link indicator (SLI) file and a weighted-value file (collectively "the crosswalks") that map local postal codes to one or more ONS neighbourhoods. The Institute for Clinical Evaluative Sciences (ICES) is collaborating with Ottawa Public Health (OPH) to map COVID-19 data by postal code, and ONS has shared its crosswalks with OPH and ICES to help. 
+
+ICES has shared a list of postal codes present in its COVID data that are missing from ONS's SLI and weighted file.
+
+This document describes the process to geocode those missing postal codes and add them to the pre-existing crosswalks.
+
+
+
+# Loading the Data
+
+## ICES Data
+
+Load ICES's list of postal codes:
+
+```{r, message=FALSE, warning=FALSE}
+pcodes_ices <- readxl::read_xlsx("../04 - Missing postal codes/data/Ottawa PHU_unknown neighbourhood_pstlcodes.xlsx", col_names = "FALSE") %>%
+  rename(postal_code = 1)
+```
+
+ICES's data has 3760 postal codes:
+
+```{r}
+pcodes_ices %>%
+  distinct() %>%
+  nrow()
+```
+
+At a glance, here are the first 10 postal codes ICES listed as missing in alphabetical order:
+
+```{r}
+pcodes_ices %>%
+  arrange(postal_code) %>%
+  head(10)
+```
+
+## The SLI
+
+Load the SLI and display the first 10 rows:
+
+```{r, message=FALSE, warning=FALSE}
+pcodes_sli <- read_csv("results/LDUs_all_ONS_SLI.csv")
+pcodes_sli %>%
+  head(10)
+
+
+```
+
+**The first few of ICES's "missing" postal codes are present in the SLI**, suggesting that not all of the codes ICES identified are actually missing. However, there may be other missing codes.
+
+## Cleaned Postal Code Shapefile
+
+For our analysis, ONS used a "cleaned" shapefile that only includes Ontario and combines multi-part postal codes into single (possibly disconnected) shapes. Load the LDU/postal code shapefile and make a quick plot:
+
+```{r, cache=TRUE, message=FALSE, warning=FALSE}
+ldus <- read_sf("../1 - New/shapefiles/LDU_union.shp") %>%
+   sf::st_transform(32189)
+
+ldus %>%
+  ggplot() +
+  geom_sf()
+```
+
+## Original DMTI Postal Code Shapefile
+
+For validation, we load the original DMTI shapefile as well. This shapefile includes all postal codes in a bounding box that contains more than Ottawa. The image has more lines because many postal codes are divided into more than one polygon.
+
+```{r, cache=TRUE, message=FALSE, warning=FALSE}
+ldus_dmti <- read_sf("../1 - New/shapefiles/DMTI_2019_CMPCS_LocalDeliveryUnitsRegion.shp") %>%
+  sf::st_transform(32189)
+
+ldus_dmti %>%
+  ggplot() +
+  geom_sf()
+```
+
+
+## Identify Missing Codes
+
+There are 741 postal codes that are in ICES' list but not in the SLI:
+
+```{r}
+
+missing_codes <- pcodes_ices %>% 
+  filter(!postal_code %in% pcodes_sli$POSTALCODE)
+
+missing_codes %>%
+  distinct() %>%
+  nrow()
+
+```
+# Geocoding the Missing Postal Codes
+
+## Setting Up the Function
+
+```{r, gmap_geocode_function}
+
+# load the api key (no, this value isn't synced on github :)
+api_key <- read_file("../../999. Often-used datafiles/chris_google_api/chris_google_api_key.csv")
+
+# function to query Google Maps Geocoding API
+gmap_geocode <- function(address = "1243 Willowdale Ave, Ottawa, ON", verbose = FALSE, wait_nicely = TRUE, api_key = NA) {
+  # must give an api key
+  if (is.na(api_key)) stop ("Please provide a valid Google Cloud API key. Get one for free here: https://cloud.google.com/free/")
+  
+  # we're only supposed to do 50 requests per second, as per the API terms of use: 
+  # https://developers.google.com/maps/documentation/geocoding/usage-and-billing
+  # To be super nice, we'll only do 40 per second
+  if (wait_nicely) Sys.sleep(60/4000)
+  
+  
+  # here's the base url to the api
+  base_url <- "https://maps.googleapis.com/maps/api/geocode/json"
+  
+  # set up a url object using the base url
+  url <- parse_url(base_url)
+  
+  # tell the url object we'd like to query that object
+  url$query <- list(address = address,
+                    key = api_key)
+  
+  # make a url out of all this information
+  url_full <- build_url(url)
+  
+  # now try to get it
+  q <- httr::GET(url=url_full)
+  
+  # give updates to the console if we want them
+  if (verbose) {
+    message (paste0("* Address: ", address))
+    message (paste0("   Status code: ", q$status_code))
+  }
+  
+  lat <- NA
+  lng <- NA
+  # if we got a good response code and if we got at least one result
+  if (q$status_code == 200 & length(content(q)$results) > 0){
+    # extract the latitude and longitude
+    latlon <- content(q)$results[[1]]$geometry$location
+    lat <- latlon$lat
+    lng <- latlon$lng
+  }
+  
+  return (tibble (lat=lat, lng=lng))
+}
+
+```
+
+## Testing the Function
+
+Test the function on just a postal code: mine, K1H7S5. The result looks good.
+
+```{r}
+test_geocode <- gmap_geocode(address = "K1H7S5", api_key = api_key)
+
+test_geocode %>%
+  leaflet() %>%
+  addTiles() %>%
+  addMarkers()
+```
+
+Next we'll try geocoding 10 randomly selected missing postal codes:
+
+```{r}
+set.seed(1234)
+test_codes <- missing_codes %>%
+  slice_sample(n=10)
+
+test_geocodes <- test_codes %>%
+  mutate(geo = purrr::map(postal_code, gmap_geocode, verbose = FALSE, api_key = api_key)) %>%
+  unnest(cols = "geo")
+
+test_geocodes %>%
+  drop_na() %>%
+  nrow()
+```
+
+On December 2, Google found results for 6 out of 10 postal codes. If we plot these postal codes, we see they're distributed across Ottawa:
+
+```{r warning=FALSE, message=FALSE}
+test_geocodes %>%
+  leaflet() %>%
+  addTiles() %>%
+  addMarkers(label = test_geocodes$postal_code)#lat= test_geocodes$lat, lng = test_geocodes$lng)
+
+```
+
+We can use a Google Search to inspect a missing and un-geocodable postal code:
+
+```{r}
+test_geocodes %>%
+  filter(is.na(lat))
+```
+
+Google gives about 22 results for "K1V1N2", all of which seem to be quite old (e.g. an Ottawa Citizen article from 2001). This suggests that it was once an active postal code, but is no longer.
+
+### Geocoding all the Missing Postal Codes
+
+This code block uses Google's geocoding API. Since Google limits usage, I ran it on December 2, 2020 and saved the results.
+
+```{r, eval=FALSE}
+missing_latlons <- missing_codes %>%
+  mutate(geo = purrr::map(postal_code, gmap_geocode, verbose = TRUE, api_key = api_key)) %>%
+  unnest(cols = "geo")
+
+# save so we don't need to run the expensive geocoding again
+missing_latlons %>%
+  save(file = "results/latlons-missing.RData")
+
+missing_latlons %>%
+  write_csv("results/missing_latlons_(2020.12.02).csv")
+
+# print a summary
+missing_latlons %>%
+  drop_na()
+```
+
+Plotting the results we see one obvious error in Kansas, but if you zoom in on Ottawa many of the codes are clustered close to each other. This suggests that there may be updates to the postal codes that aren't reflected in the DMTI shapefile.
+
+```{r}
+missing_latlons <- read_csv("results/missing_latlons_(2020.12.02).csv")
+
+missing_latlons %>%
+  leaflet() %>%
+  addTiles() %>%
+  addMarkers(label = missing_latlons$postal_code)
+```
+
+### Assigning Postal Codes to Neighbourhoods
+
+Here we define a helper function to do a spatial join:
+
+```{r get_pts_neighbourhood, warning=FALSE}
+
+# function to get the neighbourhood each point is in
+get_pts_neighbourhood <- function(pts, pgon){
+  # check input validity
+  if (!"sf" %in% class(pts)) stop("Invalid input: pts must have class 'sf', e.g. a shapefile loaded with sf::read_sf().")
+  if (!"sf" %in% class(pgon)) stop("Invalid input: pgon must have class 'sf', e.g. a shapefile loaded with sf::read_sf().")
+
+  # make sure the two datasets have the same CRS
+  if (sf::st_crs(pts) != sf::st_crs(pgon)) pts <- sf::st_transform(pts, sf::st_crs(pgon))
+  
+  # do a spatial join. #
+  results <- sf::st_join(pts, pgon)
+  
+  return (results)
+}
+
+```
+
+And we convert the list of lat/lngs to spatial objects and plot to make sure it's done correctly:
+
+```{r message=FALSE, warning=FALSE, cache=TRUE}
+missing_shp <- missing_latlons %>%
+  drop_na() %>%
+  filter(postal_code != "K2B") %>%
+  sf::st_as_sf(coords = c("lng","lat"), crs = "WGS84") 
+
+missing_shp %>%
+  ggplot() +
+  ggspatial::annotation_map_tile() +
+  geom_sf()
+```
+
+Then we map each point to its ONS neighbourhood and plot to make sure it makes sense:
+
+
+```{r message=FALSE, warning=FALSE, cache=TRUE}
+
+missing_shp_nbhds <- get_pts_neighbourhood(pts = missing_shp, pgon = ons_shp)
+
+missing_shp_nbhds %>%
+  ggplot(aes(colour = as.factor(ONS_ID))) +
+  ggspatial::annotation_map_tile() +
+  geom_sf() +
+  theme(legend.position = "none")
+
+```
+
+It all looks good.
+
+### Saving the New Data
+
+So we'll save the neighbourhood data for the postal codes we found, and we'll save a separate list of the postal codes we couldn't find.
+
+**NOTE** that there was also one invalid postal code: "K2B".
+
+```{r}
+# save the results we found
+
+# weighted style (basically the same as sli since all the weights are 1)
+missing_long <- missing_shp_nbhds %>%
+  sf::st_set_geometry(NULL) %>%
+  select(POSTALCODE = postal_code,
+         ONS_ID) %>%
+  filter(!is.na(ONS_ID)) %>%
+  mutate(pct_intersect = 1)
+
+# single-link indicator style
+missing_sli <- missing_long %>%
+  select(-pct_intersect)
+
+
+missing_shp_nbhds %>%
+  sf::st_set_geometry(NULL) %>%
+  select(POSTALCODE = postal_code,
+         ONS_ID) %>%
+  write_csv("results/missing_postal_codes_geocodable_sli_(2020.12.02).csv")
+
+# weighted style (basically the same since all the weights are 1)
+missing_shp_nbhds %>%
+  sf::st_set_geometry(NULL) %>%
+  select(POSTALCODE = postal_code,
+         ONS_ID) %>%
+  mutate(pct_intersect = 1) %>%
+  write_csv("results/missing_postal_codes_geocodable_weighted_(2020.12.02).csv")
+
+
+# save the results we couldn't find (or that are outside ONS boundaries) in a separate list
+missing_latlons %>%
+  filter(is.na(lat) | is.na(lng)) %>%
+  mutate (ONS_ID = NA) %>%
+  bind_rows(
+    missing_shp_nbhds %>%
+  sf::st_set_geometry(NULL) %>%
+  select(POSTALCODE = postal_code,
+         ONS_ID) %>%
+  filter(is.na(ONS_ID))
+  ) %>%
+  select(postal_code, ONS_ID) %>%
+  write_csv("results/missing_postal_codes_ungeocodable_(2020.12.02).csv")
+  
+
+
+```
+
+
+### Saving New with Old Data
+
+Here we create augmented versions of the weighted file and the SLI file, saved separately and datestamped.
+
+```{r}
+
+
+ldus_long <- read_csv("results/LDUs_all_ONS_long.csv")
+
+sli_long <- read_csv("results/LDUs_all_ONS_SLI.csv")
+
+ldus_augmented <- bind_rows(ldus_long, 
+          missing_long) 
+
+ldus_augmented %>%
+  write_csv("results/LDUS_ONS_augmented_long_(2020.12.02).csv")
+
+sli_augmented <- bind_rows(sli_long,
+                           missing_sli)
+
+sli_augmented %>%
+  write_csv("results/LDUS_ONS_augmented_SLI_(2020.12.02).csv")
+
+```
+
