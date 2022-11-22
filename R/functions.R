@@ -111,12 +111,51 @@ get_ldu_intersection <- function(ldus, ons_trim, batch_size = 1000){
     tidyr::unnest(cols = results) %>%
     dplyr::group_by(POSTALCODE) %>%
     dplyr::mutate(total_intersection_area = sum(intersection_area),
-           intersection_pct = intersection_area / total_intersection_area,
-           intersection_pct = round(intersection_pct, digits=3 )) %>%
+           intersection_pct = intersection_area / total_intersection_area
+           #, intersection_pct = round(intersection_pct, digits=3 )
+           ) %>%
     dplyr::filter(intersection_pct > 0 ) %>%
     dplyr::select(POSTALCODE, ONS_ID, intersection_pct) %>%
     tidyr::pivot_wider(names_from = ONS_ID, values_from = intersection_pct) %>%
     dplyr::select(POSTALCODE, sort(current_vars()))
   
   return(ldus_unnest)
+}
+
+
+
+#'  Create plots showing which LDUs are included and which are excluded
+#'
+#' Plots are saved in folder results/images
+#'
+#' @param ldu_shp DMTI-provided shapefile of all LDUs in consideration.
+#' @param ons_shp ONS_provided shapefile of neighbourhood regions.
+#' @param ldus_intersect Long version of ldu/ons intersection.
+#' @param title_name Name for plot and file. Suggest "Gen2" or "Gen3"
+#' @param ... Other parameters passed to ggsave()
+#'
+#' @return Returns TRUE if works; run for side effects.
+#' @export
+#'
+#' @examples
+create_ldu_check_plots <- function(ldu_shp, ons_shp, ldus_intersect, title_name, ...){
+  
+  plot_included <- ldu_shp %>%
+    dplyr::filter(POSTALCODE %in% ldus_intersect$POSTALCODE) %>%
+    ggplot2::ggplot() + 
+    ggplot2::geom_sf(colour = NA, fill = "blue" ) + 
+    ggplot2::geom_sf(data = ons_shp, fill = NA) +
+    ggplot2::labs(title = paste0(title_name,": LDUs in DMTI file overlapping neighbourhoods"))
+  
+  plot_excluded <- ldu_shp %>%
+    dplyr::filter(!POSTALCODE %in% ldus_intersect$POSTALCODE) %>%
+    ggplot2::ggplot() + 
+    ggplot2::geom_sf(colour = NA, fill = "blue" ) + 
+    ggplot2::geom_sf(data = ons_shp, fill = NA) +
+    ggplot2::labs(title = paste0(title_name,": LDUs in DMTI file not overlapping neighbourhoods"))
+  
+  ggplot2::ggsave(plot_included, filename = sprintf("results/images/%s-included-%s.png", title_name, Sys.Date()), ...)
+  ggplot2::ggsave(plot_excluded, filename = sprintf("results/images/%s-excluded-%s.png", title_name, Sys.Date()), ...)
+  
+  return(TRUE)
 }

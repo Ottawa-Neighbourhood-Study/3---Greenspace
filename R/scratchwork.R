@@ -1,5 +1,6 @@
 
 library(tidyverse)
+library(sf)
 library(leaflet)
 
 # test for a few ldus
@@ -27,11 +28,11 @@ test <- ldus %>%
   mutate(geometry = purrr::map(geometry, sf::st_union)) %>%
   unnest(geometry) %>%
   sf::st_as_sf(crs = "WGS84")
-  #sf::st_union(by_feature = TRUE, is_coverage = TRUE)
+#sf::st_union(by_feature = TRUE, is_coverage = TRUE)
 
-  
-  ggplot(test) + geom_sf()
-  
+
+ggplot(test) + geom_sf()
+
 ldu_shp %>% sf::st_make_valid() %>% filter(POSTALCODE == "K0G1J0")  %>% sf::st_union()
 
 
@@ -84,3 +85,62 @@ ldu_shp %>%
 
 
 get_ldu_intersection(ldu_shp, dplyr::filter(ons_shp_gen3_trim, ONS_ID == 3075), batch_size = 50)
+
+
+####### TESTING
+
+targets::tar_load(everything())
+
+hood_id <- "3075"
+
+ldu_hood <- dplyr::filter(ldus_intersect_gen3_long, ONS_ID == hood_id )
+ldus <- ldu_hood$POSTALCODE
+
+ldus_shp <- filter(ldu_shp, POSTALCODE %in% ldus) %>%
+  left_join(ldu_hood)
+
+hood_shp <- filter(ons_shp_gen3, ONS_ID == hood_id)
+
+ggplot(hood_shp) + geom_sf(colour = "blue") + geom_sf(data = ldus_shp, mapping = aes(fill = value), colour = "green")
+
+
+ldu_shp %>%
+  filter(POSTALCODE %in% ldus_intersect_gen3_long$POSTALCODE) %>%
+  #  head() %>%
+  ggplot() + geom_sf(colour = NA, fill = "blue" ) + geom_sf(data = ons_shp_gen3, fill = NA)
+
+
+ldu_shp %>%
+  filter(POSTALCODE %in% ldus_intersect_gen3_long$POSTALCODE) %>%
+  #  head() %>%
+  ggplot() + geom_sf(colour = NA, fill = "blue" ) + geom_sf(data = ons_shp_gen3, fill = NA)
+
+ldu_shp %>%
+  filter(!POSTALCODE %in% ldus_intersect_gen3_long$POSTALCODE) %>%
+  #  head() %>%
+  ggplot() + geom_sf(colour = NA, fill = "blue" ) + geom_sf(data = ons_shp_gen3, fill = NA)
+
+
+
+create_ldu_check_plots <- function(ldu_shp, ons_shp, ldus_intersect, title_name){
+  
+  plot_included <- ldu_shp %>%
+    dplyr::filter(POSTALCODE %in% ldus_intersect$POSTALCODE) %>%
+    ggplot2::ggplot() + 
+    ggplot2::geom_sf(colour = NA, fill = "blue" ) + 
+    ggplot2::geom_sf(data = ons_shp, fill = NA) +
+    ggplot2::labs(title = paste0(title_name,": LDUs in DMTI file overlapping neighbourhoods"))
+  
+  plot_excluded <- ldu_shp %>%
+    dplyr::filter(!POSTALCODE %in% ldus_intersect$POSTALCODE) %>%
+    ggplot2::ggplot() + 
+    ggplot2::geom_sf(colour = NA, fill = "blue" ) + 
+    ggplot2::geom_sf(data = ons_shp, fill = NA) +
+    ggplot2::labs(title = paste0(title_name,": LDUs in DMTI file not overlapping neighbourhoods"))
+  
+  ggplot2::ggsave(plot_included, filename = sprintf("results/images/%s-included-%s.csv", title_name, Sys.Date()))
+  ggplot2::ggsave(plot_excluded, filename = sprintf("results/images/%s-excluded-%s.csv", title_name, Sys.Date()))
+  
+}
+
+create_ldu_check_plot(ldu_shp, ons_shp_gen3, ldus_intersect_gen3_long, "ONS Gen3")

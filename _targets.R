@@ -30,33 +30,58 @@ list(
                union_ldus()),
   tar_target(osm_res_shp, get_osm_residential_polygons(ons_shp_gen3)),
   
-  # we st_collection_extract() to remove some errant linestrings that mess us up later
+  #################################### -
+  ## TRIM ONS NEIGHBOURHOODS TO OSM RESIDENTIAL REGIONS ----
+  
+  # we use st_collection_extract() to remove some errant linestrings that mess us up later
   tar_target(ons_shp_gen2_trim, sf::st_intersection(ons_shp_gen2, osm_res_shp)),
   tar_target(ons_shp_gen3_trim, sf::st_intersection(ons_shp_gen3, osm_res_shp) %>% 
                sf::st_collection_extract(type = "POLYGON") %>%
                sf::st_make_valid()),
   
-  # Gen2 boundaries: get intersections of LDUs with inhabited areas.
-  # for any postalcodes without such an intersectino, get their intersection with the regular area
+  #####################
+  ### Gen2 boundaries ----
+  # get intersections of LDUs with inhabited areas
   tar_target(ldus_intersect_gen2, get_ldu_intersection(ldu_shp, ons_shp_gen2_trim, batch_size = 50)),
   
+  # for any postalcodes without such an intersection, get their intersection with the regular area
   tar_target(ldus_intersect_gen2_extra, 
              ldu_shp %>% 
                filter(!POSTALCODE %in% ldus_intersect_gen2$POSTALCODE) %>%
              get_ldu_intersection(ons_shp_gen2, batch_size = 50)),
   
+  # put them together
   tar_target(ldus_intersect_gen2_long, dplyr::bind_rows(ldus_intersect_gen2, ldus_intersect_gen2_extra) 
              %>% pivot_longer(cols = -POSTALCODE, names_to = "ONS_ID") %>%
                drop_na()),
   
-  # Gen3 boundaries
+  #####################
+  ### Gen3 boundaries ----
+  # get intersections of LDUs with inhabited areas
   tar_target(ldus_intersect_gen3, get_ldu_intersection(ldu_shp, ons_shp_gen3_trim, batch_size = 50)),
   
+  # for any postalcodes without such an intersection, get their intersection with the regular area
   tar_target(ldus_intersect_gen3_extra, 
              ldu_shp %>% 
                filter(!POSTALCODE %in% ldus_intersect_gen3$POSTALCODE) %>%
                get_ldu_intersection(ons_shp_gen3, batch_size = 50)),
   
+  # put them together
   tar_target(ldus_intersect_gen3_long, dplyr::bind_rows(ldus_intersect_gen3, ldus_intersect_gen3_extra) %>% pivot_longer(cols = -POSTALCODE, names_to = "ONS_ID") %>% drop_na()),
+  
+  #####################
+  ## SAVE RESULTS ----
+  
+  tar_target(save_results, {
+    readr::write_csv(ldus_intersect_gen2_long, sprintf("results/ldus_ons_gen2_weighted_%s.csv", Sys.Date()))
+    readr::write_csv(ldus_intersect_gen3_long, sprintf("results/ldus_ons_gen3_weighted_%s.csv", Sys.Date()))
+  }),
+  
+  # create images saved in results/images to visually confirm
+  tar_target(create_check_images, {
+    create_ldu_check_plots(ldu_shp, ons_shp_gen2, ldus_intersect_gen2_long, "Gen2")
+    create_ldu_check_plots(ldu_shp, ons_shp_gen3, ldus_intersect_gen3_long, "Gen3")
+  }),
+  
   NULL
 )
