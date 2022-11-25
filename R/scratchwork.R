@@ -124,19 +124,25 @@ ldu_shp %>%
 
 create_ldu_check_plots <- function(ldu_shp, ons_shp, ldus_intersect, title_name){
   
-  plot_included <- ldu_shp %>%
-    dplyr::filter(POSTALCODE %in% ldus_intersect$POSTALCODE) %>%
-    ggplot2::ggplot() + 
-    ggplot2::geom_sf(colour = NA, fill = "blue" ) + 
-    ggplot2::geom_sf(data = ons_shp, fill = NA) +
-    ggplot2::labs(title = paste0(title_name,": LDUs in DMTI file overlapping neighbourhoods"))
+  in_ldu_shp <- ldu_shp %>%
+    dplyr::filter(POSTALCODE %in% ldus_intersect$POSTALCODE)
   
-  plot_excluded <- ldu_shp %>%
-    dplyr::filter(!POSTALCODE %in% ldus_intersect$POSTALCODE) %>%
+  plot_included <-  gen2_ldu_shp %>%
     ggplot2::ggplot() + 
     ggplot2::geom_sf(colour = NA, fill = "blue" ) + 
     ggplot2::geom_sf(data = ons_shp, fill = NA) +
-    ggplot2::labs(title = paste0(title_name,": LDUs in DMTI file not overlapping neighbourhoods"))
+    ggplot2::labs(title = paste0(title_name,": LDUs in DMTI file overlapping neighbourhoods"),
+                  subtitle = paste0("n=",nrow(in_ldu_shp)))
+  
+  out_ldu_shp <- ldu_shp %>%
+    dplyr::filter(POSTALCODE %in% ldus_intersect$POSTALCODE)
+  
+  plot_excluded <- out_ldu_shp %>%
+    ggplot2::ggplot() + 
+    ggplot2::geom_sf(colour = NA, fill = "blue" ) + 
+    ggplot2::geom_sf(data = ons_shp, fill = NA) +
+    ggplot2::labs(title = paste0(title_name,": LDUs in DMTI file not overlapping neighbourhoods"),
+                  subtitle = paste0("n=",nrow(out_ldu_shp)))
   
   ggplot2::ggsave(plot_included, filename = sprintf("results/images/%s-included-%s.csv", title_name, Sys.Date()))
   ggplot2::ggsave(plot_excluded, filename = sprintf("results/images/%s-excluded-%s.csv", title_name, Sys.Date()))
@@ -144,3 +150,115 @@ create_ldu_check_plots <- function(ldu_shp, ons_shp, ldus_intersect, title_name)
 }
 
 create_ldu_check_plot(ldu_shp, ons_shp_gen3, ldus_intersect_gen3_long, "ONS Gen3")
+
+
+
+
+
+
+########### THERE ARE EDGE EFFECTS WE NEED TO WORRY ABOUT
+
+# LDUs around the edges may overlap a neighbourhood by a tiny amount and have
+# most of their area outside of Ottawa. in such cases, we don't want to assign
+# all of their value to ottawa!
+
+ons_mask <- sf::st_union(ons_shp_gen3) %>%
+  sf::st_transform(crs = 32189) %>%
+  sf::st_buffer(250) %>%
+  sf::st_transform(crs = "WGS84")
+
+ggplot(ons_mask) + geom_sf()
+
+ldus <- ldu_shp[as.vector(t(sf::st_intersects(ons_mask, ldu_shp, sparse = FALSE))),]
+ggplot(ldus)+ geom_sf()
+
+
+index_contained_ldus <- as.vector( t(sf::st_contains(ons_mask, ldus, sparse = FALSE)) )
+
+ldus_not_contained <- ldus[!index_contained_ldus,]  
+ldus[!index_contained_ldus,] %>%
+  ggplot() + geom_sf(data = ons_mask, fill = "blue") + geom_sf()
+
+
+leaflet() %>% addTiles() %>% addPolygons(data = ons_mask) %>% addPolygons(data = ldus_not_contained, label = ~ POSTALCODE, highlightOptions = highlightOptions(color = "orange", fillColor = "red"))
+
+  dplyr::filter(sf::st_intersects(geometry, ons_mask, sparse = FALSE)) 
+tictoc::toc()
+  ggplot() + geom_sf(data = ons_mask) + geom_sf()
+
+  
+  
+  ## OPTIMIZE INTERSECTION
+
+  tictoc::tic()
+ldus_intersect <- ldus_batch %>%
+  #mutate(geometry = purrr::map(geometry, st_buffer, dist = 0)) %>%
+  dplyr::mutate(results = purrr::map(geometry, function(x) {
+    purrr::map(ons_trim$geometry, sf::st_intersection, y=x) %>%
+      purrr::map_dbl(sf::st_area) %>%
+      dplyr::tibble(ONS_ID = ons_trim$ONS_ID, Name = ons_trim$Name, intersection_area = .)
+  })) %>%
+  sf::st_set_geometry(NULL) %>%
+  unnest() %>%
+  filter(intersection_area > 0)
+tictoc::toc()
+
+tictoc::tic()
+ldus_intersect2 <- sf::st_intersection(ldus_batch, ons_trim) %>%
+  dplyr::mutate(intersection_area = purrr::map_dbl(geometry, sf::st_area))
+tictoc::toc()
+
+
+
+tictoc::tic()
+ons_trim <- sf::st_transform(ons_trim, crs = 32189)
+ldus_batch <- sf::st_transform(ldus_batch, crs = 32189)  %>%
+  sf::st_make_valid()
+  
+ldus_area <- sf::st_set_geometry(ldus_batch, NULL)
+
+ldus_batch <- ldus %>% sf::st_transform(crs  = 32189)
+ldus_batch <- ldus %>% head(1000) %>% sf::st_transform(crs  = 32189) %>% sf::st_make_valid()
+ldus_batch <- ldu_shp %>% head(30000) %>% sf::st_transform(crs  = 32189) %>% sf::st_make_valid()
+  
+#ldus_batch <- ldu_shp
+ons_trim <- ons_shp_gen3 %>% sf::st_transform(crs = 32189) %>% sf::st_make_valid()
+ons_trim <- ons_shp_gen3_trim %>% sf::st_transform(crs = 32189)
+
+tictoc::tic()
+ldus_intersect3 <-  ldus_batch %>%
+  dplyr::mutate(total_area = purrr::map_dbl(geometry, sf::st_area)) %>%
+  sf::st_intersection(ons_trim ) %>%
+  #left_join(ldus_area)
+  dplyr::mutate(intersection_area = purrr::map_dbl(geometry, sf::st_area))
+tictoc::toc()
+
+ldus_intersect3 %>%
+  sf::st_set_geometry(NULL) %>%
+  select(POSTALCODE, ONS_ID, total_area, intersection_area) %>%
+  arrange(POSTALCODE) %>%
+  mutate(weight = intersection_area / total_area) %>%
+  group_by(POSTALCODE) %>%
+  summarise(total = sum(weight)) %>%
+  filter(total < 0.999)
+  
+
+ldus_intersect3 %>%
+  select(POSTALCODE, ONS_ID, total_area, intersection_area) %>%
+  arrange(POSTALCODE) %>%
+  group_by(POSTALCODE) %>%
+  mutate(total_intersection_area = sum(intersection_area)) %>%
+  ungroup() %>%
+  filter(total_area - total_intersection_area > 1)
+
+
+
+
+
+
+
+##
+
+tictoc::tic()
+z <- get_ldu_intersection2(sf::st_transform(ldu_shp_trim, crs = 32189), sf::st_transform(ons_shp_gen3_trim, crs = 32189), denominator_area = "intersecting")
+tictoc::toc()

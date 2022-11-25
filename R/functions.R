@@ -111,9 +111,9 @@ get_ldu_intersection <- function(ldus, ons_trim, batch_size = 1000){
     tidyr::unnest(cols = results) %>%
     dplyr::group_by(POSTALCODE) %>%
     dplyr::mutate(total_intersection_area = sum(intersection_area),
-           intersection_pct = intersection_area / total_intersection_area
-           #, intersection_pct = round(intersection_pct, digits=3 )
-           ) %>%
+                  intersection_pct = intersection_area / total_intersection_area
+                  #, intersection_pct = round(intersection_pct, digits=3 )
+    ) %>%
     dplyr::filter(intersection_pct > 0 ) %>%
     dplyr::select(POSTALCODE, ONS_ID, intersection_pct) %>%
     tidyr::pivot_wider(names_from = ONS_ID, values_from = intersection_pct) %>%
@@ -123,6 +123,54 @@ get_ldu_intersection <- function(ldus, ons_trim, batch_size = 1000){
 }
 
 
+
+
+# optimized function to get intersections between LDUs and neighbourhoods. no
+# batches needed, and same function can be called for trimmed and untrimmed
+# regions.
+get_ldu_intersection2 <- function(ldus, ons_shp, denominator_area = c("intersecting", "total")){
+  
+  ldus <- sf::st_transform(ldus, crs = 32189)
+  ons_shp <- sf::st_transform(ons_shp, crs = 32189)
+  
+  denominator_area <- match.arg(denominator_area, denominator_area)
+  
+  tictoc::tic()
+  ldus_intersect3 <- ldus %>%
+    dplyr::mutate(total_area = purrr::map_dbl(geometry, sf::st_area)) %>%
+    sf::st_intersection(ons_shp ) %>%
+    dplyr::mutate(intersection_area = purrr::map_dbl(geometry, sf::st_area))
+  tictoc::toc()
+  
+  if (denominator_area == "total"){
+    result <- ldus_intersect3 %>%
+      sf::st_set_geometry(NULL) %>%
+      dplyr::select(POSTALCODE, ONS_ID, total_area, intersection_area) %>%
+      dplyr::arrange(POSTALCODE) %>%
+      dplyr::mutate(weight = intersection_area / total_area) %>%
+      dplyr::select(-total_area, -intersection_area)
+  }
+  
+  if (denominator_area == "intersecting"){
+    result <- ldus_intersect3 %>%
+      sf::st_set_geometry(NULL) %>%
+      dplyr::select(POSTALCODE, ONS_ID, total_area, intersection_area) %>%
+      dplyr::arrange(POSTALCODE) %>%
+      dplyr::group_by(POSTALCODE) %>%
+      dplyr::mutate(weight = intersection_area / sum(intersection_area)) %>%
+      dplyr::select(-total_area, -intersection_area) %>%
+      dplyr::ungroup()
+  }
+  
+  # this is where we do the intersection calculations
+  # for each postal code, we find the total area that intersects with any neighbourhood
+  # then we find the percentage of that value that each intersection represents
+  # so it is NOT % of total postal code area; it is % of postal code area that intersects any residential area.
+  # so the 
+  
+  
+  return(result)
+}
 
 #'  Create plots showing which LDUs are included and which are excluded
 #'
@@ -140,22 +188,46 @@ get_ldu_intersection <- function(ldus, ons_trim, batch_size = 1000){
 #' @examples
 create_ldu_check_plots <- function(ldu_shp, ons_shp, ldus_intersect, title_name, ...){
   
-  plot_included <- ldu_shp %>%
-    dplyr::filter(POSTALCODE %in% ldus_intersect$POSTALCODE) %>%
-    ggplot2::ggplot() + 
-    ggplot2::geom_sf(colour = NA, fill = "blue" ) + 
-    ggplot2::geom_sf(data = ons_shp, fill = NA) +
-    ggplot2::labs(title = paste0(title_name,": LDUs in DMTI file overlapping neighbourhoods"))
+  in_ldu_shp <- ldu_shp %>%
+    dplyr::filter(POSTALCODE %in% ldus_intersect$POSTALCODE)
   
-  plot_excluded <- ldu_shp %>%
-    dplyr::filter(!POSTALCODE %in% ldus_intersect$POSTALCODE) %>%
+  plot_included <-  in_ldu_shp %>%
     ggplot2::ggplot() + 
     ggplot2::geom_sf(colour = NA, fill = "blue" ) + 
     ggplot2::geom_sf(data = ons_shp, fill = NA) +
-    ggplot2::labs(title = paste0(title_name,": LDUs in DMTI file not overlapping neighbourhoods"))
+    ggplot2::labs(title = paste0(title_name,": LDUs in DMTI file overlapping neighbourhoods"),
+                  subtitle = paste0("n=",nrow(in_ldu_shp)))
+  
+  out_ldu_shp <- ldu_shp %>%
+    dplyr::filter(!POSTALCODE %in% ldus_intersect$POSTALCODE)
+  
+  plot_excluded <- out_ldu_shp %>%
+    ggplot2::ggplot() + 
+    ggplot2::geom_sf(colour = NA, fill = "blue" ) + 
+    ggplot2::geom_sf(data = ons_shp, fill = NA) +
+    ggplot2::labs(title = paste0(title_name,": LDUs in DMTI file not overlapping neighbourhoods"),
+                  subtitle = paste0("n=",nrow(out_ldu_shp)))
   
   ggplot2::ggsave(plot_included, filename = sprintf("results/images/%s-included-%s.png", title_name, Sys.Date()), ...)
   ggplot2::ggsave(plot_excluded, filename = sprintf("results/images/%s-excluded-%s.png", title_name, Sys.Date()), ...)
   
   return(TRUE)
+}
+
+
+create_sli_plot <- function(ldu_shp, ons_shp, sli, title_name, ...){
+  
+  
+  plot_sli <- dplyr::left_join(ldu_shp, sli, by = "POSTALCODE") %>%
+    mutate(ONS_ID = as.character(ONS_ID)) %>%
+    #drop_na(ONS_ID ) %>%
+    #  head(1000) %>%
+    ggplot2::ggplot() +
+    ggplot2::geom_sf(aes(fill = ONS_ID), color = NA) +
+    ggplot2::geom_sf(data = ons_shp, fill = NA, color = "black") +
+    ggplot2::labs(title = paste0(title_name,": LDUs by Single-Link to ONS Neighbourhoods")) +
+    ggplot2::theme(legend.position = "none")
+  
+  ggplot2::ggsave(plot_sli, filename = sprintf("results/images/%s-sli-%s.png", title_name, Sys.Date()), ...)
+  
 }
