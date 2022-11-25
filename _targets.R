@@ -55,7 +55,7 @@ list(
   tar_target(ldus_intersect_gen2_extra,
              ldu_shp %>%
                filter(!POSTALCODE %in% ldus_intersect_gen2$POSTALCODE) %>%
-               get_ldu_intersection2(ons_shp_gen2, denominator_area = "total")
+               get_ldu_intersection2(ons_shp_gen2)
              ),
 
   # put them together
@@ -71,7 +71,7 @@ list(
   tar_target(ldus_intersect_gen3_extra,
              ldu_shp %>%
                filter(!POSTALCODE %in% ldus_intersect_gen3$POSTALCODE) %>%
-               get_ldu_intersection2(ons_shp_gen3, denominator_area = "total")
+               get_ldu_intersection2(ons_shp_gen3)
   ),
   
   # put them together

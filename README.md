@@ -1,55 +1,62 @@
-Preface
-=======
+# Preface
 
 This is a working document and will be updated and improved as time goes
 on. If you have questions or comments please contact Christopher
-Belanger at
-<a href="mailto:cbela092@uottawa.ca" class="email">cbela092@uottawa.ca</a>.
+Belanger at <cbela092@uottawa.ca>.
 
-Summary
-=======
+# Summary
 
 This Ottawa Neighbourhood Study (ONS) GitHub repository includes the
 code and methodology for creating an area crosswalks between postal
 codes and ONS neighbourhoods, and also includes the resulting crosswalk
-files. The two main crosswalk files are:
+files.
 
--   **LDUS\_all\_ONS\_long.csv**: A “long” weighted postal-code/ONS
-    Neighbourhood crosswalk file. Each row identifies a postal code, an
-    ONS Neighbourhood ID, and the proportion of the postal code within
-    that ONS Neighbourhood. Each postal code can be mapped to more than
-    one ONS Neighbourhood.
--   **LDUS\_all\_ONS\_SLI.csv**: A “long” single-link indicator
-    postal-code/ONS neighbourhood crosswalk file. Each row identifies a
-    postal code and a single ONS Neighbourhood ID. Each postal code is
-    mapped to only one ONS Neighbourhood.
+Crosswalk files come in two flavours: weighted files, where each postal
+code can be assigned to more than one neighbourhood, and single-link
+indicator (SLI) files, where each postal code is linked to one single
+neighbourhood.
 
-In addition, two other “augmented” files include everything from the two
-files above plus new postal codes collected by ICES. These “augmented”
-files are datestamped since they may need to be updated. These files
-are:
+In addition, crosswalk files have been generated for older “Gen 2” ONS
+neighbourhood boundaries and new “Gen 3” boundaries.
 
--   **LDUS\_ONS\_augmented\_long\_(2020.12.02).csv**: Same format as the
-    long file above.
--   **LDUS\_ONS\_augmented\_SLI\_(2020.12.02).csv**: Same format as the
-    SLI file above.
+Crosswalk files are saved in the `results/` folder, are named according
+to their generation and sli/weighted status, and are datestamped.
 
-Methodology
-===========
+# Methodology
 
-The code and methodology are presented and described in the two .Rmd
-files. This section may be updated to give an overview of the
-methodology if time permits.
+1.  By using residential area instead of total land area, we hope to
+    distribute populations more accurately between neighbourhoods.
+2.  By normalizing our intersection percentages to intersecting area,
+    rather than total area, we will ensure that all Ottawa residents are
+    counted completely. (In other words, if a postal code is only
+    partially inside Ottawa, any Ottawa resident in that postal code
+    will be completely attributed to one or more ONS neighbourhoods.)
 
-Workflow
-========
+The process is as follows:
 
-This project is written in
-[RMarkdown](https://bookdown.org/yihui/rmarkdown/) using
-[RStudio](https://rstudio.com/).
+1.  We start with a proprietary dataset of postal codes (local delivery
+    units, or LDUs), and ONS neighbourhoods (gen2 or gen3).
+2.  We get residential zones according to OpenStreepMaps (OSM).
+3.  We “trim” our LDU and ONS datasets to their intersection with the
+    OSM residential areas.
+4.  For each trimmed LDU, we find its intersection with the trimmed ONS
+    neighbourhoods and calculate its area.
+5.  Each LDU/ONS intersection area is converted to a weight, by dividing
+    that LDU/ONS intersection area by that LDU’s total intersected area.
+    In other words, we normalize to the postal code’s residential area
+    that intersects any neighbourhood’s residential area, not the postal
+    code’s total area.
+6.  Some LDUs will not intersect any ONS residential areas, so next we
+    account for these. We take the LDUs not in our weighted list, and
+    repeat the previous two steps but using *untrimmed* regions, in
+    other words using total land area instead of residential land area.
+    The results are added to our list of weights.
+7.  To create an SLI, we map each LDU to the one neighbourhood it
+    overlaps the most.
 
-Note on Proprietary Data
-========================
+Results are saved as .csv files.
+
+# Note on Proprietary Data
 
 **Please note** that the code in this repository requires non-public
 proprietary data files in order to work. Specifically, we’re not able to
