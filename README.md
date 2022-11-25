@@ -24,14 +24,6 @@ to their generation and sli/weighted status, and are datestamped.
 
 # Methodology
 
-1.  By using residential area instead of total land area, we hope to
-    distribute populations more accurately between neighbourhoods.
-2.  By normalizing our intersection percentages to intersecting area,
-    rather than total area, we will ensure that all Ottawa residents are
-    counted completely. (In other words, if a postal code is only
-    partially inside Ottawa, any Ottawa resident in that postal code
-    will be completely attributed to one or more ONS neighbourhoods.)
-
 The process is as follows:
 
 1.  We start with a proprietary dataset of postal codes (local delivery
@@ -54,7 +46,24 @@ The process is as follows:
 7.  To create an SLI, we map each LDU to the one neighbourhood it
     overlaps the most.
 
-Results are saved as .csv files.
+Results are saved as .csv files in the folder `results/`, and several
+diagnostic images are saved in the folder `results/images/`.
+
+Two considerations:
+
+1.  By using residential area instead of total land area, we hope to
+    distribute populations more accurately between neighbourhoods.
+2.  By normalizing our intersection percentages to intersecting area,
+    rather than total area, we will ensure that all Ottawa residents are
+    counted completely. (In other words, if a postal code is only
+    partially inside Ottawa, any Ottawa resident in that postal code
+    will be completely attributed to one or more ONS neighbourhoods.)
+
+# Code
+
+This project is written in R using the package `targets` for a
+reproducible workflow. All steps described above are outlined in the
+file `_targets.R`.
 
 # Note on Proprietary Data
 

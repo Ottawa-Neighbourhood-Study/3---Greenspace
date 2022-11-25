@@ -23,9 +23,6 @@ Crosswalk files are saved in the `results/` folder, are named according to their
 
 # Methodology
 
-1. By using residential area instead of total land area, we hope to distribute populations more accurately between neighbourhoods.
-1. By normalizing our intersection percentages to intersecting area, rather than total area, we will ensure that all Ottawa residents are counted completely. (In other words, if a postal code is only partially inside Ottawa, any Ottawa resident in that postal code will be completely attributed to one or more ONS neighbourhoods.)
-
 The process is as follows:
 
 1. We start with a proprietary dataset of postal codes (local delivery units, or LDUs), and ONS neighbourhoods (gen2 or gen3).
@@ -37,6 +34,12 @@ The process is as follows:
 1. To create an SLI, we map each LDU to the one neighbourhood it overlaps the most. 
 
 Results are saved as .csv files in the folder `results/`, and several diagnostic images are saved in the folder `results/images/`.
+
+Two considerations: 
+
+1. By using residential area instead of total land area, we hope to distribute populations more accurately between neighbourhoods.
+1. By normalizing our intersection percentages to intersecting area, rather than total area, we will ensure that all Ottawa residents are counted completely. (In other words, if a postal code is only partially inside Ottawa, any Ottawa resident in that postal code will be completely attributed to one or more ONS neighbourhoods.)
+
 
 # Code
 
