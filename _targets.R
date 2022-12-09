@@ -29,6 +29,8 @@ list(
                dplyr::filter(PROV == "ON") %>%
                union_ldus() ),
   tar_target(osm_res_shp, get_osm_residential_polygons(ons_shp_gen3) %>% sf::st_transform(crs = 32189)),
+  tar_target(previous_2021_weighted, readr::read_csv("data/csv_SSOT_PC_ONS_2021.09.29.csv")),
+  
   
   #################################### -
   ## TRIM ONS NEIGHBOURHOODS TO OSM RESIDENTIAL REGIONS ----
@@ -94,6 +96,31 @@ list(
       dplyr::filter(weight == max(weight)) %>%
       dplyr::select(-weight)
   }),
+  
+  
+  ##########
+  ## ADD POSTAL CODES FROM PREVIOUS SLI FOR COMPLETENESS ----
+  tar_target(previous_2021_sli, {
+    previous_2021_weighted %>%
+      dplyr::group_by(postalcode) %>%
+      dplyr::arrange(postalcode, dplyr::desc(area_weight)) %>%
+      dplyr::slice_head(n=1) %>%
+      select(POSTALCODE = postalcode, ONS_ID)
+  }),
+  
+  tar_target(ldus_sli_gen2_augmented, {
+    dplyr::bind_rows(
+      ldus_sli_gen2,
+      full_join(dplyr::rename(ldus_sli_gen2, ONS_ID_NEW = ONS_ID), 
+                dplyr::rename(previous_2021_sli, ONS_ID_OLD = ONS_ID), 
+                by = "POSTALCODE") %>%
+        dplyr::filter(is.na(ONS_ID_NEW)) %>%
+        dplyr::select(POSTALCODE, ONS_ID = ONS_ID_OLD)
+    )
+    
+  }),
+  
+  
 
 
   ##################### -
@@ -107,6 +134,7 @@ list(
 
   tar_target(save_results_sli, {
     readr::write_csv(ldus_sli_gen2, sprintf("results/ldus_ons_gen2_sli_%s.csv", Sys.Date()))
+    readr::write_csv(ldus_sli_gen2_augmented, sprintf("results/ldus_ons_gen2_sli_augmented%s.csv", Sys.Date()))
     readr::write_csv(ldus_sli_gen3, sprintf("results/ldus_ons_gen3_sli_%s.csv", Sys.Date()))
   }),
 

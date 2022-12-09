@@ -262,3 +262,52 @@ ldus_intersect3 %>%
 tictoc::tic()
 z <- get_ldu_intersection2(sf::st_transform(ldu_shp_trim, crs = 32189), sf::st_transform(ons_shp_gen3_trim, crs = 32189), denominator_area = "intersecting")
 tictoc::toc()
+
+
+ldus_sli_gen2 %>% filter(POSTALCODE %in% c("K0A2H0", "K0A1L0"))
+
+forplot <- left_join(ldu_shp, ldus_sli_gen2, by = "POSTALCODE") %>% mutate(ONS_ID = as.character(ONS_ID))
+
+pal <- leaflet::colorFactor(palette ="RdYlBu", domain = forplot$ONS_ID)
+
+leaflet(forplot) %>% addPolygons(label = ~ paste0(POSTALCODE,": ", ONS_ID), fillColor = ~ pal (forplot$ONS_ID), weight = 1)
+
+
+
+
+############ check against last crosswalk
+library(tidyverse)
+targets::tar_load(c(previous_2021_sli, ldus_sli_gen2, ldus_sli_gen2_augmented))
+
+sli_new <- readr::read_csv("results/ldus_ons_gen2_sli_2022-11-25.csv") %>%
+  rename(ONS_ID_NEW = ONS_ID)
+
+sli_old <- readr::read_csv("results/archive/LDUS_ONS_augmented_SLI_(2020.12.02).csv") %>%
+  rename(ONS_ID_OLD = ONS_ID)
+
+
+sli_older = previous_2021_sli %>%
+  rename(ONS_ID_KADY2021 = ONS_ID)
+
+sli_comp <- full_join(sli_new, sli_old, by = "POSTALCODE") %>%
+  full_join(sli_older, by = "POSTALCODE") %>%
+  mutate(diff = ONS_ID_NEW != ONS_ID_OLD) %>%
+  mutate(oldkadydiff = ONS_ID_OLD != ONS_ID_KADY2021) %>%
+  mutate(newkadydiff = ONS_ID_NEW != ONS_ID_KADY2021)
+
+full_join(dplyr::rename(ldus_sli_gen2, ONS_ID_NEW = ONS_ID), 
+          dplyr::rename(previous_2021_sli, ONS_ID_OLD = ONS_ID), 
+          by = "POSTALCODE") %>%
+  dplyr::filter(is.na(ONS_ID_NEW)) %>%
+  dplyr::select(POSTALCODE, ONS_ID = ONS_ID_OLD)
+
+
+
+# tests!
+
+# there are MORE THAN ZERO postal codes in the old SLI that are not in the new unaugmented SLI
+testthat::expect_gt(nrow(dplyr::filter(previous_2021_sli, !POSTALCODE %in% ldus_sli_gen2$POSTALCODE)), 0)
+
+# there are ZERO postal codes in the old SLI that are not in the new  augmented SLI
+testthat::expect_equal(nrow(dplyr::filter(previous_2021_sli, !POSTALCODE %in% ldus_sli_gen2_augmented$POSTALCODE)), 0)
+
