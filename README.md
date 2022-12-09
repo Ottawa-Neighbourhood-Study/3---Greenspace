@@ -46,6 +46,11 @@ The process is as follows:
 7.  To create an SLI, we map each LDU to the one neighbourhood it
     overlaps the most.
 
+Then we manually add some postal codes that were in stakeholders’
+datasets but are not in our LDU shapefile. These may be new postal codes
+not yet represented in the LDU data, or they may be older decommissioned
+postal codes that are still in address data sets.
+
 Results are saved as .csv files in the folder `results/`, and several
 diagnostic images are saved in the folder `results/images/`.
 
