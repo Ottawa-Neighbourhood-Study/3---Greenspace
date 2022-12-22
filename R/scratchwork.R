@@ -311,3 +311,19 @@ testthat::expect_gt(nrow(dplyr::filter(previous_2021_sli, !POSTALCODE %in% ldus_
 # there are ZERO postal codes in the old SLI that are not in the new  augmented SLI
 testthat::expect_equal(nrow(dplyr::filter(previous_2021_sli, !POSTALCODE %in% ldus_sli_gen2_augmented$POSTALCODE)), 0)
 
+
+
+
+#############
+
+# looking at MORE missing LDUs...
+library(tidyverse)
+targets::tar_load(ldus_sli_gen2_augmented)
+
+missing_codes <- readr::read_csv("data/missing postal codes mortgage_debt_2019.csv") %>%
+  rename(POSTALCODE = `Postal Code`, ONS_ID = HOOD_ID)
+
+ldus_sli_gen2_augmented
+
+missing_codes %>%
+  filter(!POSTALCODE %in% ldus_sli_gen2_augmented$POSTALCODE)

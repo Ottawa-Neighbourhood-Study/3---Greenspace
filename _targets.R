@@ -109,14 +109,20 @@ list(
   }),
   
   tar_target(ldus_sli_gen2_augmented, {
-    dplyr::bind_rows(
-      ldus_sli_gen2,
-      full_join(dplyr::rename(ldus_sli_gen2, ONS_ID_NEW = ONS_ID), 
+    
+    more_missing_codes <- readr::read_csv("data/missing postal codes mortgage_debt_2019.csv") %>%
+      rename(POSTALCODE = `Postal Code`, ONS_ID = HOOD_ID)
+    
+    
+      other_missing_codes <- full_join(dplyr::rename(ldus_sli_gen2, ONS_ID_NEW = ONS_ID), 
                 dplyr::rename(previous_2021_sli, ONS_ID_OLD = ONS_ID), 
                 by = "POSTALCODE") %>%
         dplyr::filter(is.na(ONS_ID_NEW)) %>%
-        dplyr::select(POSTALCODE, ONS_ID = ONS_ID_OLD)
-    )
+        dplyr::select(POSTALCODE, ONS_ID = ONS_ID_OLD) 
+      
+      ldus_sli_gen2 %>%
+        dplyr::bind_rows(other_missing_codes) %>%
+        dplyr::bind_rows(more_missing_codes)
     
   }),
   
