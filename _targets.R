@@ -126,6 +126,23 @@ list(
     
   }),
   
+  tar_target(ldus_sli_gen3_augmented, {
+    more_missing_codes <- readr::read_csv("data/missing postal codes mortgage_debt_2019.csv") %>%
+      rename(POSTALCODE = `Postal Code`, ONS_ID = HOOD_ID)
+    
+    
+    other_missing_codes <- full_join(dplyr::rename(ldus_sli_gen3, ONS_ID_NEW = ONS_ID), 
+                                     dplyr::rename(previous_2021_sli, ONS_ID_OLD = ONS_ID), 
+                                     by = "POSTALCODE") %>%
+      dplyr::filter(is.na(ONS_ID_NEW)) %>%
+      dplyr::select(POSTALCODE, ONS_ID = ONS_ID_OLD) 
+    
+    ldus_sli_gen3 %>%
+      dplyr::bind_rows(other_missing_codes) %>%
+      dplyr::bind_rows(more_missing_codes)
+    
+  }),
+  
   
 
 
@@ -140,8 +157,9 @@ list(
 
   tar_target(save_results_sli, {
     readr::write_csv(ldus_sli_gen2, sprintf("results/ldus_ons_gen2_sli_%s.csv", Sys.Date()))
-    readr::write_csv(ldus_sli_gen2_augmented, sprintf("results/ldus_ons_gen2_sli_augmented%s.csv", Sys.Date()))
+    readr::write_csv(ldus_sli_gen2_augmented, sprintf("results/ldus_ons_gen2_sli_augmented_%s.csv", Sys.Date()))
     readr::write_csv(ldus_sli_gen3, sprintf("results/ldus_ons_gen3_sli_%s.csv", Sys.Date()))
+    readr::write_csv(ldus_sli_gen2_augmented, sprintf("results/ldus_ons_gen3_sli_augmented_%s.csv", Sys.Date()))
   }),
 
   # create images saved in results/images to visually confirm

@@ -182,15 +182,15 @@ ldus[!index_contained_ldus,] %>%
 
 leaflet() %>% addTiles() %>% addPolygons(data = ons_mask) %>% addPolygons(data = ldus_not_contained, label = ~ POSTALCODE, highlightOptions = highlightOptions(color = "orange", fillColor = "red"))
 
-  dplyr::filter(sf::st_intersects(geometry, ons_mask, sparse = FALSE)) 
+dplyr::filter(sf::st_intersects(geometry, ons_mask, sparse = FALSE)) 
 tictoc::toc()
-  ggplot() + geom_sf(data = ons_mask) + geom_sf()
+ggplot() + geom_sf(data = ons_mask) + geom_sf()
 
-  
-  
-  ## OPTIMIZE INTERSECTION
 
-  tictoc::tic()
+
+## OPTIMIZE INTERSECTION
+
+tictoc::tic()
 ldus_intersect <- ldus_batch %>%
   #mutate(geometry = purrr::map(geometry, st_buffer, dist = 0)) %>%
   dplyr::mutate(results = purrr::map(geometry, function(x) {
@@ -214,13 +214,13 @@ tictoc::tic()
 ons_trim <- sf::st_transform(ons_trim, crs = 32189)
 ldus_batch <- sf::st_transform(ldus_batch, crs = 32189)  %>%
   sf::st_make_valid()
-  
+
 ldus_area <- sf::st_set_geometry(ldus_batch, NULL)
 
 ldus_batch <- ldus %>% sf::st_transform(crs  = 32189)
 ldus_batch <- ldus %>% head(1000) %>% sf::st_transform(crs  = 32189) %>% sf::st_make_valid()
 ldus_batch <- ldu_shp %>% head(30000) %>% sf::st_transform(crs  = 32189) %>% sf::st_make_valid()
-  
+
 #ldus_batch <- ldu_shp
 ons_trim <- ons_shp_gen3 %>% sf::st_transform(crs = 32189) %>% sf::st_make_valid()
 ons_trim <- ons_shp_gen3_trim %>% sf::st_transform(crs = 32189)
@@ -241,7 +241,7 @@ ldus_intersect3 %>%
   group_by(POSTALCODE) %>%
   summarise(total = sum(weight)) %>%
   filter(total < 0.999)
-  
+
 
 ldus_intersect3 %>%
   select(POSTALCODE, ONS_ID, total_area, intersection_area) %>%
@@ -318,12 +318,20 @@ testthat::expect_equal(nrow(dplyr::filter(previous_2021_sli, !POSTALCODE %in% ld
 
 # looking at MORE missing LDUs...
 library(tidyverse)
-targets::tar_load(ldus_sli_gen2_augmented)
+targets::tar_load(c(ldus_sli_gen2_augmented,ldus_sli_gen3_augmented))
 
 missing_codes <- readr::read_csv("data/missing postal codes mortgage_debt_2019.csv") %>%
   rename(POSTALCODE = `Postal Code`, ONS_ID = HOOD_ID)
 
-ldus_sli_gen2_augmented
 
-missing_codes %>%
-  filter(!POSTALCODE %in% ldus_sli_gen2_augmented$POSTALCODE)
+
+testthat::test_that(
+  "all originally missing codes are present in gen2 augmented sli ",
+  testthat::expect_equal(nrow(filter(missing_codes, !POSTALCODE %in% ldus_sli_gen2_augmented$POSTALCODE)),  0))
+
+testthat::test_that(
+  "all originally missing codes are present in gen3 augmented sli ",
+  testthat::expect_equal(nrow(filter(missing_codes, !POSTALCODE %in% ldus_sli_gen3_augmented$POSTALCODE)),  0))
+
+
+
